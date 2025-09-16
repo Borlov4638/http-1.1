@@ -89,9 +89,7 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 }
 
 func parseRequestLine(data []byte) (int, *RequestLine, error) {
-	fmt.Println(string(data))
 	idx := bytes.Index(data, []byte(SEPARATOR))
-	fmt.Println(string(data))
 	if idx == -1 {
 		return 0, nil, nil
 	}
