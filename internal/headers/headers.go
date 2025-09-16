@@ -55,8 +55,6 @@ func (h Headers) Parse(data []byte) (n int, done bool, err error) {
 	}
 
 	value := bytes.TrimSpace(headerBytes[collonIdx+1:])
-	fmt.Printf("% x\n", headerBytes[collonIdx+1:])
-	fmt.Printf("% x\n", headerBytes[:collonIdx])
 
 	mapKey := strings.ToLower(string(key))
 	if existingValue, ok := h[mapKey]; !ok {

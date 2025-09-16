@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"httpfromtcp/internal/headers"
 	"io"
 	"log"
 	"strings"
@@ -12,13 +13,15 @@ import (
 type ParserState int
 
 const (
-	initialized ParserState = iota
-	done
+	parserStateInitialized ParserState = iota
+	parserStateDone
+	parserStateParsingHeaders
 )
 
 type Request struct {
 	RequestLine RequestLine
 	ParserState ParserState
+	Headers     headers.Headers
 }
 
 type RequestLine struct {
@@ -39,7 +42,8 @@ var (
 
 func newRequest() Request {
 	return Request{
-		ParserState: initialized,
+		ParserState: parserStateInitialized,
+		Headers:     headers.NewHeaders(),
 	}
 }
 
@@ -48,9 +52,9 @@ func (r *Request) parse(data []byte) (int, error) {
 
 	for {
 		switch r.ParserState {
-		case done:
+		case parserStateDone:
 			return read, nil
-		case initialized:
+		case parserStateInitialized:
 			bytesRead, requestLine, err := parseRequestLine(data[read:])
 			if err != nil {
 				return read, err
@@ -60,7 +64,22 @@ func (r *Request) parse(data []byte) (int, error) {
 			}
 			r.RequestLine = *requestLine
 			read += bytesRead
-			r.ParserState = done
+			r.ParserState = parserStateParsingHeaders
+		case parserStateParsingHeaders:
+			for {
+				bytesRead, done, err := r.Headers.Parse(data[read:])
+				if err != nil {
+					return read, err
+				}
+				read += bytesRead
+				if done {
+					r.ParserState = parserStateDone
+					return read, nil
+				}
+				if bytesRead == 0 {
+					return read, nil
+				}
+			}
 		}
 	}
 }
@@ -70,7 +89,7 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 	buffer := make([]byte, 1024)
 	bufferLen := 0
 
-	for request.ParserState != done {
+	for request.ParserState != parserStateDone {
 		readBytes, err := reader.Read(buffer[bufferLen:])
 		if err != nil {
 			log.Fatal(err.Error())
@@ -109,7 +128,6 @@ func parseRequestLine(data []byte) (int, *RequestLine, error) {
 
 	httpMethod := requestLineParts[0]
 	if strings.ToUpper(httpMethod) != httpMethod {
-		fmt.Println(httpMethod)
 		return 0, nil, fmt.Errorf("invalid http method, got %s", httpMethod)
 	} else if _, ok := allowedMethods[httpMethod]; !ok {
 		return 0, nil, fmt.Errorf("http method is not allowed, got %s", httpMethod)

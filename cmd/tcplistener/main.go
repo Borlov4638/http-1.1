@@ -25,7 +25,12 @@ func main() {
 			log.Fatal(err)
 		}
 
-		fmt.Printf("Request line:\n- Method: %s\n- Target: %s\n- Version: %s", request.RequestLine.Method, request.RequestLine.HTTPVersion, request.RequestLine.RequestTarget)
+		requestLine := fmt.Sprintf("Request line:\n- Method: %s\n- Target: %s\n- Version: %s\n Headers:", request.RequestLine.Method, request.RequestLine.HTTPVersion, request.RequestLine.RequestTarget)
+
+		for key, value := range request.Headers {
+			requestLine += fmt.Sprintf("\n- %s: %s", key, value)
+		}
+		fmt.Println(requestLine)
 		conn.Close()
 	}
 }
