@@ -1,6 +1,7 @@
 package request
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -31,61 +32,73 @@ var allowedMethods = map[string]struct{}{
 	"POST": {},
 }
 
-var errNeedMoreData = errors.New("need more data to process")
+var (
+	SEPARATOR       = "\r\n"
+	errNeedMoreData = errors.New("need more data to process")
+)
+
+func newRequest() Request {
+	return Request{
+		ParserState: initialized,
+	}
+}
 
 func (r *Request) parse(data []byte) (int, error) {
-	r.ParserState = initialized
+	read := 0
 
-	readBytes, requestLine, err := parseRequestLine(data)
-	if err != nil {
-		return 0, err
+	for {
+		switch r.ParserState {
+		case done:
+			return read, nil
+		case initialized:
+			bytesRead, requestLine, err := parseRequestLine(data[read:])
+			if err != nil {
+				return read, err
+			}
+			if bytesRead == 0 {
+				return read, nil
+			}
+			r.RequestLine = *requestLine
+			read += bytesRead
+			r.ParserState = done
+		}
 	}
-	if readBytes == 0 {
-		return 0, nil
-	}
-	copy(data, data[readBytes:])
-
-	r.ParserState = done
-	r.RequestLine = *requestLine
-
-	return readBytes, nil
 }
 
 func RequestFromReader(reader io.Reader) (*Request, error) {
-	var request Request
-	buffer := make([]byte, 8)
-	var total []byte
+	request := newRequest()
+	buffer := make([]byte, 1024)
+	bufferLen := 0
 
 	for request.ParserState != done {
-		readBytes, err := reader.Read(buffer)
+		readBytes, err := reader.Read(buffer[bufferLen:])
 		if err != nil {
 			log.Fatal(err.Error())
 		}
+		bufferLen += readBytes
 
-		total = append(total, buffer[:readBytes]...)
-		_, err = request.parse(total)
+		consumedBytes, err := request.parse(buffer[:bufferLen])
 		if err != nil {
 			return nil, fmt.Errorf("error parsing data %w", err)
 		}
+		copy(buffer, buffer[consumedBytes:bufferLen])
+		bufferLen -= consumedBytes
 	}
 
 	return &request, nil
 }
 
-func parseRequestLine(dataChunk []byte) (readBytes int, requstLine *RequestLine, err error) {
-	strRequest := string(dataChunk)
-	var requestParts []string
-
-	requestParts = strings.Split(strRequest, "\r\n")
-
-	fmt.Println(requestParts)
-	if strings.Contains(strRequest, "\r\n") {
-		requestParts = strings.Split(strRequest, "\r\n")
-	} else {
+func parseRequestLine(data []byte) (int, *RequestLine, error) {
+	fmt.Println(string(data))
+	idx := bytes.Index(data, []byte(SEPARATOR))
+	fmt.Println(string(data))
+	if idx == -1 {
 		return 0, nil, nil
 	}
 
-	requestLineParts := strings.Split(requestParts[0], " ")
+	requstLine := string(data[:idx])
+
+	requestLineParts := strings.Split(requstLine, " ")
 
 	if len(requestLineParts) != 3 {
 		return 0, nil, errors.New("invalid parts count")
@@ -115,5 +128,5 @@ func parseRequestLine(dataChunk []byte) (readBytes int, requstLine *RequestLine,
 		Method:        httpMethod,
 	}
 
-	return len(requestParts[0]), &res, nil
+	return len(data[:idx+len(SEPARATOR)]), &res, nil
 }

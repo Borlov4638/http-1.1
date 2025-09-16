@@ -42,8 +42,8 @@ func Test(t *testing.T) {
 
 	// TEST: Good GET request line with path
 	reader = &chunkReader{
-		data:            "GET / HTTP/1.1\r\nHost: localhost:42069\r\nUser-Agent: curl/7.81.0\r\nAccept: */*\r\n\r\n",
-		numBytesPerRead: 3,
+		data:            "GET /coffee HTTP/1.1\r\nHost: localhost:42069\r\nUser-Agent: curl/7.81.0\r\nAccept: */*\r\n\r\n",
+		numBytesPerRead: 2,
 	}
 	r, err = RequestFromReader(reader)
 	require.NoError(t, err)
