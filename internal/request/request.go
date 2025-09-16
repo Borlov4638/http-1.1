@@ -7,21 +7,24 @@ import (
 	"httpfromtcp/internal/headers"
 	"io"
 	"log"
+	"log/slog"
 	"strings"
 )
 
-type ParserState int
+type ParserState string
 
 const (
-	parserStateInitialized ParserState = iota
-	parserStateDone
-	parserStateParsingHeaders
+	parserStateInitialized    ParserState = "init"
+	parserStateDone           ParserState = "done"
+	parserStateParsingHeaders ParserState = "headers"
+	parserStateParsingBody    ParserState = "body"
 )
 
 type Request struct {
 	RequestLine RequestLine
 	ParserState ParserState
 	Headers     headers.Headers
+	Body        []byte
 }
 
 type RequestLine struct {
@@ -36,8 +39,11 @@ var allowedMethods = map[string]struct{}{
 }
 
 var (
-	SEPARATOR       = "\r\n"
-	errNeedMoreData = errors.New("need more data to process")
+	SEPARATOR                       = "\r\n"
+	CONTENT_LENGTH_HEADER           = "content-length"
+	errNeedMoreData                 = errors.New("need more data to process")
+	errBadContentLength             = errors.New("bad content-length")
+	errNoContentLenButBodyIsPresent = errors.New("no content-length but body is presented")
 )
 
 func newRequest() Request {
@@ -51,6 +57,7 @@ func (r *Request) parse(data []byte) (int, error) {
 	read := 0
 
 	for {
+		slog.Info("ParsedState", "state", r.ParserState)
 		switch r.ParserState {
 		case parserStateDone:
 			return read, nil
@@ -73,13 +80,36 @@ func (r *Request) parse(data []byte) (int, error) {
 				}
 				read += bytesRead
 				if done {
-					r.ParserState = parserStateDone
-					return read, nil
+					r.ParserState = parserStateParsingBody
+					return read + len(headers.CRLF), nil
 				}
 				if bytesRead == 0 {
 					return read, nil
 				}
 			}
+		case parserStateParsingBody:
+			contentLength, ok := r.Headers.GetInt(CONTENT_LENGTH_HEADER)
+			if !ok {
+				fmt.Println(len(data[read:]) > 0)
+				if len(data[read:]) > 0 {
+					return read, errNoContentLenButBodyIsPresent
+				}
+				r.ParserState = parserStateDone
+				return read, nil
+			}
+
+			remaining := min(contentLength-len(r.Body), len(data[read:]))
+
+			r.Body = append(r.Body, data[:remaining]...)
+			read += remaining
+
+			if len(r.Body) > contentLength {
+				return read, errBadContentLength
+			} else if contentLength == len(r.Body) {
+				r.ParserState = parserStateDone
+			}
+
+			return read, nil
 		}
 	}
 }
@@ -92,7 +122,11 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 	for request.ParserState != parserStateDone {
 		readBytes, err := reader.Read(buffer[bufferLen:])
 		if err != nil {
-			log.Fatal(err.Error())
+			if err == io.EOF {
+				return &request, nil
+			} else {
+				log.Fatal(err)
+			}
 		}
 		bufferLen += readBytes
 

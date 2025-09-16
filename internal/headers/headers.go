@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -30,6 +31,27 @@ func (k *Key) isValid() bool {
 	}
 
 	return KeyRegexp.MatchString(string(*k))
+}
+
+func (h *Headers) Get(key string) (string, bool) {
+	headersMap := *h
+	val, ok := headersMap[strings.ToLower(key)]
+
+	if !ok {
+		return "", false
+	}
+
+	return val, true
+}
+
+func (h *Headers) GetInt(key string) (int, bool) {
+	val, ok := h.Get(key)
+	if !ok {
+		return 0, false
+	}
+	intVal, _ := strconv.Atoi(val)
+
+	return intVal, true
 }
 
 func (h Headers) Parse(data []byte) (n int, done bool, err error) {
