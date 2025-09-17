@@ -53,11 +53,19 @@ func newRequest() Request {
 	}
 }
 
+func (r *Request) hasBody() bool {
+	contentLen, ok := r.Headers.GetInt(CONTENT_LENGTH_HEADER)
+	slog.Info("HasBody", "ok", ok, "content-length", contentLen)
+	if !ok || contentLen == 0 {
+		return false
+	}
+	return true
+}
+
 func (r *Request) parse(data []byte) (int, error) {
 	read := 0
 
 	for {
-		slog.Info("ParsedState", "state", r.ParserState)
 		switch r.ParserState {
 		case parserStateDone:
 			return read, nil
@@ -80,14 +88,22 @@ func (r *Request) parse(data []byte) (int, error) {
 				}
 				read += bytesRead
 				if done {
-					r.ParserState = parserStateParsingBody
-					return read + len(headers.CRLF), nil
+					slog.Info("RequestHeaders", "Headers", r.Headers)
+					if r.hasBody() {
+						r.ParserState = parserStateParsingBody
+						read = read + len(headers.CRLF)
+						break
+					} else {
+						r.ParserState = parserStateDone
+						return read + len(headers.CRLF), nil
+					}
 				}
 				if bytesRead == 0 {
 					return read, nil
 				}
 			}
 		case parserStateParsingBody:
+			fmt.Println("BODY")
 			contentLength, ok := r.Headers.GetInt(CONTENT_LENGTH_HEADER)
 			if !ok {
 				fmt.Println(len(data[read:]) > 0)
@@ -99,8 +115,9 @@ func (r *Request) parse(data []byte) (int, error) {
 			}
 
 			remaining := min(contentLength-len(r.Body), len(data[read:]))
+			slog.Info("BodyParsing", "remaining", remaining, "read", read)
 
-			r.Body = append(r.Body, data[:remaining]...)
+			r.Body = append(r.Body, (data[read:])[:remaining]...)
 			read += remaining
 
 			if len(r.Body) > contentLength {
@@ -121,15 +138,12 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 
 	for request.ParserState != parserStateDone {
 		readBytes, err := reader.Read(buffer[bufferLen:])
-		if err != nil {
-			if err == io.EOF {
-				return &request, nil
-			} else {
-				log.Fatal(err)
-			}
+		if err != nil || (err == io.EOF && bufferLen == 0) {
+			log.Fatal(err)
 		}
 		bufferLen += readBytes
 
+		slog.Info("ParsedState", "state", request.ParserState)
 		consumedBytes, err := request.parse(buffer[:bufferLen])
 		if err != nil {
 			return nil, fmt.Errorf("error parsing data %w", err)

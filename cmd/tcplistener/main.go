@@ -30,6 +30,7 @@ func main() {
 		for key, value := range request.Headers {
 			requestLine += fmt.Sprintf("\n- %s: %s", key, value)
 		}
+		requestLine += fmt.Sprintf("\nBody:\n%s", string(request.Body))
 		fmt.Println(requestLine)
 		conn.Close()
 	}
