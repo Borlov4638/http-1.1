@@ -1,8 +1,11 @@
 package server
 
 import (
+	"bytes"
 	"fmt"
+	"httpfromtcp/internal/request"
 	"httpfromtcp/internal/response"
+	"io"
 	"net"
 	"sync/atomic"
 )
@@ -24,7 +27,7 @@ func (s *Server) Close() error {
 	return nil
 }
 
-func (s *Server) listen() {
+func (s *Server) listen(h Handler) {
 	s.State.Store(true)
 	for {
 		connection, err := s.Listener.Accept()
@@ -34,31 +37,60 @@ func (s *Server) listen() {
 		if err != nil {
 			panic("you are a bad progremmer")
 		}
-		s.handle(connection)
+		s.handle(connection, h)
 	}
 }
 
-func (s *Server) handle(conn net.Conn) {
+func (s *Server) handle(conn net.Conn, h Handler) {
 	defer conn.Close()
-	err := response.WriteStatusLine(conn, response.StatusCodeOk)
+
+	request, err := request.RequestFromReader(conn)
 	if err != nil {
 		fmt.Println(err)
 	}
-	resHeaders := response.GetDefaultHeaders(0)
+
+	buffer := bytes.NewBuffer([]byte{})
+	handlerErr := h(buffer, request)
+	if handlerErr != nil {
+		err = response.WriteStatusLine(conn, handlerErr.StatusCode)
+		if err != nil {
+			fmt.Println(err)
+		}
+		return
+	}
+
+	err = response.WriteStatusLine(conn, response.StatusCodeOk)
+	if err != nil {
+		fmt.Println(err)
+	}
+	resHeaders := response.GetDefaultHeaders(len(buffer.Bytes()))
 	err = response.WriteHeaders(conn, resHeaders)
 	if err != nil {
 		fmt.Println(err)
 	}
+	conn.Write(buffer.Bytes())
 }
 
-func Serve(port int) (*Server, error) {
+func Serve(port int, h Handler) (*Server, error) {
 	newServer := newServer()
 
 	newListener, _ := net.Listen("tcp", ":"+fmt.Sprint(port))
 	newServer.Listener = newListener
 	go func() {
-		newServer.listen()
+		newServer.listen(h)
 	}()
 
 	return &newServer, nil
 }
+
+type HandlerError struct {
+	StatusCode response.StatusCode
+	Message    string
+}
+
+func (he *HandlerError) SendError(w io.Writer) {
+	errMsg := fmt.Sprintf("HTTP/1.1 %v %s", he.StatusCode, he.Message)
+	w.Write([]byte(errMsg))
+}
+
+type Handler func(w io.Writer, req *request.Request) *HandlerError
