@@ -2,16 +2,9 @@ package server
 
 import (
 	"fmt"
+	"httpfromtcp/internal/response"
 	"net"
 	"sync/atomic"
-)
-
-var stdResponse = fmt.Sprint(
-	"HTTP/1.1 200 OK\r\n" +
-		"Content-Type: text/plain\n" +
-		"Content-Length: 13\n" +
-		"\r\n\r\n" +
-		"Hello World!\n",
 )
 
 type Server struct {
@@ -46,7 +39,16 @@ func (s *Server) listen() {
 }
 
 func (s *Server) handle(conn net.Conn) {
-	conn.Write([]byte(stdResponse))
+	defer conn.Close()
+	err := response.WriteStatusLine(conn, response.StatusCodeOk)
+	if err != nil {
+		fmt.Println(err)
+	}
+	resHeaders := response.GetDefaultHeaders(0)
+	err = response.WriteHeaders(conn, resHeaders)
+	if err != nil {
+		fmt.Println(err)
+	}
 }
 
 func Serve(port int) (*Server, error) {
