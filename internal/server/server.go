@@ -13,10 +13,13 @@ import (
 type Server struct {
 	Listener net.Listener
 	State    atomic.Bool
+	Handler  Handler
 }
 
-func newServer() Server {
-	return Server{}
+func newServer(h Handler) Server {
+	return Server{
+		Handler: h,
+	}
 }
 
 func (s *Server) Close() error {
@@ -27,7 +30,7 @@ func (s *Server) Close() error {
 	return nil
 }
 
-func (s *Server) listen(h Handler) {
+func (s *Server) listen() {
 	s.State.Store(true)
 	for {
 		connection, err := s.Listener.Accept()
@@ -37,11 +40,11 @@ func (s *Server) listen(h Handler) {
 		if err != nil {
 			panic("you are a bad progremmer")
 		}
-		s.handle(connection, h)
+		s.handle(connection)
 	}
 }
 
-func (s *Server) handle(conn net.Conn, h Handler) {
+func (s *Server) handle(conn net.Conn) {
 	defer conn.Close()
 
 	request, err := request.RequestFromReader(conn)
@@ -50,7 +53,7 @@ func (s *Server) handle(conn net.Conn, h Handler) {
 	}
 
 	buffer := bytes.NewBuffer([]byte{})
-	handlerErr := h(buffer, request)
+	handlerErr := s.Handler(buffer, request)
 	if handlerErr != nil {
 		err = response.WriteStatusLine(conn, handlerErr.StatusCode)
 		if err != nil {
@@ -72,12 +75,12 @@ func (s *Server) handle(conn net.Conn, h Handler) {
 }
 
 func Serve(port int, h Handler) (*Server, error) {
-	newServer := newServer()
+	newServer := newServer(h)
 
 	newListener, _ := net.Listen("tcp", ":"+fmt.Sprint(port))
 	newServer.Listener = newListener
 	go func() {
-		newServer.listen(h)
+		newServer.listen()
 	}()
 
 	return &newServer, nil
