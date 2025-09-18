@@ -53,3 +53,39 @@ func WriteHeaders(w io.Writer, headers headers.Headers) error {
 	w.Write([]byte("\r\n"))
 	return nil
 }
+
+type Writer struct {
+	Writer io.Writer
+}
+
+func (w *Writer) WriteStatusLine(statusCode StatusCode) error {
+	reason := ReasonStatusLineMap[statusCode]
+	statusLine := fmt.Sprintf("HTTP/1.1 %v %s\r\n", statusCode, reason)
+
+	_, err := w.Writer.Write([]byte(statusLine))
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (w *Writer) WriteHeaders(headers headers.Headers) error {
+	for key, value := range headers {
+		writeHeader := fmt.Sprintf("%s: %s\r\n", key, value)
+		_, err := w.Writer.Write([]byte(writeHeader))
+		if err != nil {
+			return err
+		}
+	}
+	w.Writer.Write([]byte("\r\n"))
+	return nil
+}
+
+func (w *Writer) WriteBody(p []byte) (int, error) {
+	bytesRead, err := w.Writer.Write(p)
+	if err != nil {
+		return 0, nil
+	}
+	return bytesRead, nil
+}

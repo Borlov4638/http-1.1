@@ -1,7 +1,6 @@
 package server
 
 import (
-	"bytes"
 	"fmt"
 	"httpfromtcp/internal/request"
 	"httpfromtcp/internal/response"
@@ -51,27 +50,11 @@ func (s *Server) handle(conn net.Conn) {
 	if err != nil {
 		fmt.Println(err)
 	}
-
-	buffer := bytes.NewBuffer([]byte{})
-	handlerErr := s.Handler(buffer, request)
-	if handlerErr != nil {
-		err = response.WriteStatusLine(conn, handlerErr.StatusCode)
-		if err != nil {
-			fmt.Println(err)
-		}
-		return
+	writer := response.Writer{
+		Writer: conn,
 	}
 
-	err = response.WriteStatusLine(conn, response.StatusCodeOk)
-	if err != nil {
-		fmt.Println(err)
-	}
-	resHeaders := response.GetDefaultHeaders(len(buffer.Bytes()))
-	err = response.WriteHeaders(conn, resHeaders)
-	if err != nil {
-		fmt.Println(err)
-	}
-	conn.Write(buffer.Bytes())
+	s.Handler(&writer, request)
 }
 
 func Serve(port int, h Handler) (*Server, error) {
@@ -96,4 +79,4 @@ func (he *HandlerError) SendError(w io.Writer) {
 	w.Write([]byte(errMsg))
 }
 
-type Handler func(w io.Writer, req *request.Request) *HandlerError
+type Handler func(w *response.Writer, req *request.Request)
