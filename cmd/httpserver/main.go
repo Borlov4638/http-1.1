@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 )
@@ -106,6 +107,32 @@ func proxyHandler(w *response.Writer, req *request.Request) {
 	w.WriteHeaders(trailers)
 }
 
+func videoHandler(w *response.Writer, req *request.Request) {
+	prefix := "/video"
+	header := headers.NewHeaders()
+
+	if !strings.HasPrefix(req.RequestLine.RequestTarget, prefix) || req.RequestLine.Method != "GET" {
+		header["Connection"] = "close"
+		header["Content-Type"] = "text/html"
+		w.WriteStatusLine(response.StatusCodeBadRequest)
+		header["Content-Length"] = fmt.Sprint(len(badRequestBody))
+		w.WriteHeaders(header)
+		w.WriteBody([]byte(badRequestBody))
+		return
+	}
+	header.Add("Content-Type", "video/mp4")
+	w.WriteStatusLine(response.StatusCodeOk)
+	w.WriteHeaders(header)
+
+	filePath, err := filepath.Abs("./assets/vim.mp4")
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		log.Print(err)
+		panic("no vim.mp4 you dummy")
+	}
+	w.WriteBody(data)
+}
+
 func handler(w *response.Writer, req *request.Request) {
 	headers := headers.NewHeaders()
 	headers["Connection"] = "close"
@@ -131,7 +158,7 @@ func handler(w *response.Writer, req *request.Request) {
 }
 
 func main() {
-	server, err := server.Serve(42069, proxyHandler)
+	server, err := server.Serve(42069, videoHandler)
 	if err != nil {
 		log.Fatalf("Error starting server: %v", err)
 	}

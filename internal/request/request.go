@@ -33,7 +33,7 @@ type RequestLine struct {
 	Method        string
 }
 
-var allowedMethods = map[string]struct{}{
+var AllowedMethods = map[string]struct{}{
 	"GET":  {},
 	"POST": {},
 }
@@ -176,7 +176,7 @@ func parseRequestLine(data []byte) (int, *RequestLine, error) {
 	httpMethod := requestLineParts[0]
 	if strings.ToUpper(httpMethod) != httpMethod {
 		return 0, nil, fmt.Errorf("invalid http method, got %s", httpMethod)
-	} else if _, ok := allowedMethods[httpMethod]; !ok {
+	} else if _, ok := AllowedMethods[httpMethod]; !ok {
 		return 0, nil, fmt.Errorf("http method is not allowed, got %s", httpMethod)
 	}
 
