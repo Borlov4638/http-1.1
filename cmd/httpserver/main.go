@@ -6,9 +6,13 @@ import (
 	"httpfromtcp/internal/request"
 	"httpfromtcp/internal/response"
 	"httpfromtcp/internal/server"
+	"io"
 	"log"
+	"log/slog"
+	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 )
 
@@ -50,6 +54,51 @@ var okBody = `
 	</html>
 `
 
+func proxyHandler(w *response.Writer, req *request.Request) {
+	prefix := "/httpbin/"
+	headers := headers.NewHeaders()
+
+	if !strings.HasPrefix(req.RequestLine.RequestTarget, prefix) {
+		headers["Connection"] = "close"
+		headers["Content-Type"] = "text/html"
+		w.WriteStatusLine(response.StatusCodeBadRequest)
+		headers["Content-Length"] = fmt.Sprint(len(badRequestBody))
+		w.WriteHeaders(headers)
+		w.WriteBody([]byte(badRequestBody))
+		return
+	}
+
+	bufferIdx := 0
+	resp, err := http.Get(fmt.Sprint("https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API/Using_Fetch"))
+	if err != nil {
+		return
+	}
+
+	headers.Add("Transfer-Encoding", "chunked")
+
+	headers.Add("Connection", "close")
+	headers.Add("Content-Type", "text/html")
+	slog.Info("ResponseHeaders", "Headers", headers)
+	for {
+		buffer := make([]byte, 32)
+		bytesRead, err := resp.Body.Read(buffer)
+		if err != nil {
+			if err == io.EOF {
+				w.WriteChunkedBodyDone()
+			}
+			return
+		}
+		len, err := w.WriteChunkedBody(buffer)
+		if err != nil {
+			slog.Error("Chunced", "error", err)
+			return
+		}
+		slog.Info("Chunced", "length", len)
+
+		bufferIdx += bytesRead
+	}
+}
+
 func handler(w *response.Writer, req *request.Request) {
 	headers := headers.NewHeaders()
 	headers["Connection"] = "close"
@@ -75,7 +124,7 @@ func handler(w *response.Writer, req *request.Request) {
 }
 
 func main() {
-	server, err := server.Serve(port, handler)
+	server, err := server.Serve(42069, proxyHandler)
 	if err != nil {
 		log.Fatalf("Error starting server: %v", err)
 	}

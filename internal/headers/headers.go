@@ -54,6 +54,21 @@ func (h *Headers) GetInt(key string) (int, bool) {
 	return intVal, true
 }
 
+func (h *Headers) Add(key, value string) {
+	headers := *h
+	mapKey := strings.ToLower(string(key))
+	if existingValue, ok := headers[mapKey]; !ok {
+		headers[mapKey] = string(value)
+	} else {
+		headers[mapKey] = existingValue + ", " + string(value)
+	}
+}
+
+func (h *Headers) Remove(key string) {
+	headers := *h
+	delete(headers, key)
+}
+
 func (h Headers) Parse(data []byte) (n int, done bool, err error) {
 	crlfIdx := bytes.Index(data, CRLF)
 	if crlfIdx == -1 {
@@ -78,12 +93,7 @@ func (h Headers) Parse(data []byte) (n int, done bool, err error) {
 
 	value := bytes.TrimSpace(headerBytes[collonIdx+1:])
 
-	mapKey := strings.ToLower(string(key))
-	if existingValue, ok := h[mapKey]; !ok {
-		h[mapKey] = string(value)
-	} else {
-		h[mapKey] = existingValue + ", " + string(value)
-	}
+	h.Add(string(key), string(value))
 
 	return len(headerBytes) + len(CRLF), false, nil
 }
