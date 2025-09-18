@@ -103,7 +103,6 @@ func (r *Request) parse(data []byte) (int, error) {
 				}
 			}
 		case parserStateParsingBody:
-			fmt.Println("BODY")
 			contentLength, ok := r.Headers.GetInt(CONTENT_LENGTH_HEADER)
 			if !ok {
 				fmt.Println(len(data[read:]) > 0)
