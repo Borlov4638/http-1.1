@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"httpfromtcp/internal/headers"
 	"httpfromtcp/internal/request"
@@ -56,29 +57,33 @@ var okBody = `
 
 func proxyHandler(w *response.Writer, req *request.Request) {
 	prefix := "/httpbin/"
-	headers := headers.NewHeaders()
+	header := headers.NewHeaders()
 
 	if !strings.HasPrefix(req.RequestLine.RequestTarget, prefix) {
-		headers["Connection"] = "close"
-		headers["Content-Type"] = "text/html"
+		header["Connection"] = "close"
+		header["Content-Type"] = "text/html"
 		w.WriteStatusLine(response.StatusCodeBadRequest)
-		headers["Content-Length"] = fmt.Sprint(len(badRequestBody))
-		w.WriteHeaders(headers)
+		header["Content-Length"] = fmt.Sprint(len(badRequestBody))
+		w.WriteHeaders(header)
 		w.WriteBody([]byte(badRequestBody))
 		return
 	}
 
-	bufferIdx := 0
+	fullBuffer := []byte{}
+	trailers := headers.NewHeaders()
 	resp, err := http.Get(fmt.Sprint("https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API/Using_Fetch"))
 	if err != nil {
 		return
 	}
 
-	headers.Add("Transfer-Encoding", "chunked")
+	header.Add("Transfer-Encoding", "chunked")
 
-	headers.Add("Connection", "close")
-	headers.Add("Content-Type", "text/html")
-	slog.Info("ResponseHeaders", "Headers", headers)
+	header.Add("Connection", "close")
+	header.Add("Content-Type", "text/html")
+
+	header.Add("Trailer", "X-Content-SHA256")
+	header.Add("Trailer", "X-Content-Length")
+	slog.Info("ResponseHeaders", "Headers", header)
 	for {
 		buffer := make([]byte, 32)
 		bytesRead, err := resp.Body.Read(buffer)
@@ -86,17 +91,19 @@ func proxyHandler(w *response.Writer, req *request.Request) {
 			if err == io.EOF {
 				w.WriteChunkedBodyDone()
 			}
-			return
+			break
 		}
-		len, err := w.WriteChunkedBody(buffer)
+		len, err := w.WriteChunkedBody(buffer[:bytesRead])
 		if err != nil {
 			slog.Error("Chunced", "error", err)
 			return
 		}
+		fullBuffer = append(fullBuffer, buffer[:bytesRead]...)
 		slog.Info("Chunced", "length", len)
-
-		bufferIdx += bytesRead
 	}
+	trailers.Add("X-Content-Length", fmt.Sprint(len(fullBuffer)))
+	trailers.Add("X-Content-SHA256", fmt.Sprintf("%x", sha256.Sum256(fullBuffer)))
+	w.WriteHeaders(trailers)
 }
 
 func handler(w *response.Writer, req *request.Request) {
